@@ -1,0 +1,15 @@
+{
+  "name": "backend_practise",
+  "version": "1.0.0",
+  "description": "this is a project for backend practise",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "nodemon src/index.js"
+  },
+  "author": "Harkirat Singh",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
