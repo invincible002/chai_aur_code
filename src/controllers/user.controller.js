@@ -211,4 +211,92 @@ const refreshAccessToken = async (req, res) => {
   }
 };
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+const updatePassword = async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user?._id);
+
+  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+
+  if (!isPasswordCorrect) {
+    return res.status(401).json({ message: "Incorrect Old Password" });
+  }
+
+  user.password = newPassword;
+
+  await user.save({ validateBeforeSave: false });
+
+  return res.status(200).json({ message: "Password Updated Successfully" });
+};
+
+const getCurrentUser = async (req, res) => {
+  return res.status(200).json(req.user);
+};
+
+const updateAccountDetails = async (req, res) => {
+  const { fullName, email } = req.body;
+
+  if (!fullName && !!email) {
+    return res.status(401).json({ message: "Invalid Input" });
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        fullName,
+        email,
+      },
+    },
+    { new: true }
+  ).select("-password");
+
+  return res.status(200).json({ user, message: "User Updated Successfully" });
+};
+
+const updateAvatar = async (req, res) => {
+  // if (
+  //   req.files &&
+  //   Array.isArray(req.files.avatar) &&
+  //   req.files.avatar.length > 0
+  // ) {
+  //   avatarLocalPath = req.files.avatar[0].path;
+  // }
+  const avatarLocalPath = req?.file?.path;
+  if (!avatarLocalPath) {
+    return res.status(401).json({ message: "Avatar is Required" });
+  }
+
+  try {
+    const avatarUrl = await uploadOnCloudinary(avatarLocalPath);
+
+    const user = (
+      await User.findByIdAndUpdate(
+        req.user._id,
+        {
+          $set: {
+            avatar: avatarUrl.url,
+          },
+        },
+        { new: true }
+      )
+    ).select("-password");
+
+    return res
+      .status(200)
+      .json({ user, message: "Avatar Updated Successfully" });
+  } catch (error) {
+    return res.status(500).json({ error, message: "Internal server error" });
+  }
+};
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  updatePassword,
+  getCurrentUser,
+  updateAccountDetails,
+  updateAvatar,
+};
