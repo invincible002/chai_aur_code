@@ -1,6 +1,20 @@
 import { User } from "../models/user.modal.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import jwt from "jsonwebtoken";
+const generateTokens = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
 
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    return res.status(500).json({ message: "Error while creating tokens" });
+  }
+};
 const registerUser = async (req, res) => {
   // get user details from frontend
   // validation - not empty
@@ -77,4 +91,124 @@ const registerUser = async (req, res) => {
   }
 };
 
-export { registerUser };
+const loginUser = async (req, res) => {
+  // get email/username and password from frontend
+  // validate the data
+  // search user using username or email
+  // if user found then compare password otherwise send user not found
+  // check password matches or not
+  // generate refresh and access token and send in cookies
+
+  const { email, username, password } = req.body;
+
+  if (!username && !email) {
+    return res.status(400).json({ message: "Username or email is required" });
+  }
+
+  const user = await User.findOne({
+    $or: [{ email }, { username }],
+  });
+  if (!user) {
+    return res.status(404).json({ message: "User Not Found" });
+  }
+
+  const isPasswordValid = await user.isPasswordCorrect(password);
+  if (!isPasswordValid) {
+    return res.status(405).json({ message: "Password is not correct" });
+  }
+  const { accessToken, refreshToken } = await generateTokens(user._id);
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json({
+      user: loggedInUser,
+      accessToken,
+      refreshToken,
+      message: "Login Successfull",
+    });
+};
+
+const logoutUser = async (req, res) => {
+  await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        refreshToken: undefined,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json({ message: "User Logged Out Successfully" });
+};
+
+const refreshAccessToken = async (req, res) => {
+  const incommingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
+
+  if (!incommingRefreshToken) {
+    return res.status(401).json({ message: "Unauthorized Request" });
+  }
+
+  try {
+    const decodedRefreshToken = jwt.verify(
+      incommingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    const user = await User.findById(decodedRefreshToken?._id);
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid Refresh Token" });
+    }
+
+    if (incommingRefreshToken !== user?.refreshToken) {
+      return res
+        .status(401)
+        .json({ message: "Refresh token is expired or used" });
+    }
+
+    const options = {
+      httpOnly: true,
+      secure: true,
+    };
+
+    const { accessToken, newRefreshToken } = await generateTokens(user._id);
+
+    return res
+      .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", newRefreshToken, options)
+      .json({
+        accessToken,
+        refreshToken: newRefreshToken,
+        message: "Tokens refreshed",
+      });
+  } catch (error) {
+    return res.status(401).json(error?.message || error);
+  }
+};
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken };
